@@ -1,6 +1,19 @@
 import boto3
 import pprint
 import csv
+import operator
+
+
+def sort_key_func(item):
+    """ Helper function used to sort list of dicts
+
+    :param item: dict
+    :return: sorted list of tuples (k, v)
+    """
+    pairs = []
+    for k, v in item.items():
+        pairs.append((k, v))
+    return sorted(pairs)
 
 class aws_data():
     def __init__(self):
@@ -33,6 +46,7 @@ class aws_data():
                 if 'BlockDeviceMappings' in instance:
                     for BlockDevice in instance['BlockDeviceMappings']:
                         data=list()
+                        noCustomerData=False
                         if BlockDevice['Ebs']['VolumeId'] in self.vol_data:
                             data.append(BlockDevice['Ebs']['VolumeId'])
                             data.append(instance['InstanceId'])
@@ -44,9 +58,13 @@ class aws_data():
                                 if not name and tag['Key'] == 'Name':
                                     name = True
                                     data.append(tag['Value'])
-                                tags.append(["Tag", tag['Key'],tag['Value']])
+                                    if str(tag['Value']).find('-ci') > -1:
+                                        noCustomerdata=True
+                                        data.append(["No Customer Data, CI system"])
+                                tags.append({tag['Key']:tag['Value']})
                             if not name:
                                 data.append("  ")
+                            sorted(tags, key=sort_key_func)
                             data.append(tags)
                         for item in self.vol_data[BlockDevice['Ebs']['VolumeId']][2:]:
                             data.append(item)
@@ -57,7 +75,7 @@ class aws_data():
                                 if 'Groups' in interface:
                                     for SecurityGroup in interface['Groups']:
                                         data.append([SecurityGroup['GroupId'], SecurityGroup['GroupName']])
-                        self.vol_ec2_data[BlockDevice['Ebs']['VolumeId']]=[data]
+                        self.vol_ec2_data[str(BlockDevice['Ebs']['VolumeId'])+str(instance['InstanceId'])]=[data]
 
     def print_data(self):
         # Print our data by EC2 instance
@@ -66,21 +84,21 @@ class aws_data():
             print("****************")
 
     def write_csv_data(self):
-        header=['VolumeID', 'InstanceID', "Encrypted", "Name Tag", "Volume Tags", "Instance Tags", "Iam Profile", "Security Groups"]
+        header=['VolumeID', 'InstanceID', "Encrypted", "Name Tag", "Instance Tags", "Volume Tags", "Iam Profile", "Security Groups"]
         with open('volumes.csv', 'w') as f:
             write = csv.writer(f)
             write.writerow(header)
-            for volume in list(self.vol_ec2_data):
-                row = list(self.vol_ec2_data[volume])
+            for key in self.vol_ec2_data.keys():
+                row = list(self.vol_ec2_data[key])
                 write.writerows(row)
             for vol in self.vol_data:
                 try: 
                     if  self.vol_data[vol][0][0].get('AttachTime'):
-                        i=1
-                except IndexError:
+                        i=1 # no-op to skip
+                except IndexError: # print out everthing unattached as they are not in self.vol_ec2_data
                     row = list()
                     row.append([[vol], ["Unattached Volume"],self.vol_data[vol]])
-                write.writerows(row)
+                    write.writerows(row)
             
 
     def write_vol_data(self):
@@ -111,3 +129,6 @@ if __name__ == '__main__':
         aws.print_vol_data()
     else:
         aws.print_data()
+
+# Eugene Petrov attests that volumes where " (size < 15 GB) and( has tags) and (tag:Application in (bitc, whodat, howdat)) " have no PHI
+# I have asked Eugene to open a tkt to encrypt/remove these volumes so we can be fully encrypted.
