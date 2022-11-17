@@ -3,7 +3,6 @@ import pprint
 import csv
 import operator
 
-
 def sort_key_func(item):
     """ Helper function used to sort list of dicts
 
@@ -21,7 +20,6 @@ class aws_data():
         self.ec2client = boto3.client('ec2')
         self.ec2response = self.ec2client.describe_instances()
         self.vol_data = dict()
-        self.ec2_data = dict()
         self.vol_ec2_data = dict()
         self.get_vol_data()
         self.get_ec2_data()
@@ -38,7 +36,7 @@ class aws_data():
             if 'Tags' in vol:
                 self.vol_data[vol['VolumeId']] = [vol["Attachments"], ["Encrypted", vol['Encrypted']],vol['Tags']]
             else:
-                self.vol_data[vol['VolumeId']] = [vol["Attachments"], ["Encrypted", vol['Encrypted']],['No Volume Tags']]
+                self.vol_data[vol['VolumeId']] = [vol["Attachments"], ["Encrypted", vol['Encrypted']],['']]
 
     def get_ec2_data(self):
         for reservation in self.ec2response["Reservations"]:
@@ -61,9 +59,10 @@ class aws_data():
                                     if str(tag['Value']).find('-ci') > -1:
                                         noCustomerdata=True
                                         data.append(["No Customer Data, CI system"])
-                                tags.append({tag['Key']:tag['Value']})
+                                else:
+                                    tags.append({tag['Key']:tag['Value']})
                             if not name:
-                                data.append("  ")
+                                data.append("  ") # No Name tag, enpty entry
                             sorted(tags, key=sort_key_func)
                             data.append(tags)
                         for item in self.vol_data[BlockDevice['Ebs']['VolumeId']][2:]:
@@ -98,18 +97,7 @@ class aws_data():
                 except IndexError: # print out everthing unattached as they are not in self.vol_ec2_data
                     row = list()
                     row.append([[vol], ["Unattached Volume"],self.vol_data[vol]])
-                    write.writerows(row)
-            
-
-    def write_vol_data(self):
-        for vol in self.vol_data:
-                try: 
-                    if  self.vol_data[vol][0][0].get('AttachTime'):
-                        i=1
-                except IndexError:
-                    pprint.pprint(vol)
-                    pprint.pprint(self.vol_data[vol])
-            
+                    write.writerows(row)            
 
 if __name__ == '__main__':
     import argparse
@@ -126,9 +114,4 @@ if __name__ == '__main__':
     if args.csv:
         aws.write_csv_data()
     elif args.vol:
-        aws.print_vol_data()
-    else:
         aws.print_data()
-
-# Eugene Petrov attests that volumes where " (size < 15 GB) and( has tags) and (tag:Application in (bitc, whodat, howdat)) " have no PHI
-# I have asked Eugene to open a tkt to encrypt/remove these volumes so we can be fully encrypted.
